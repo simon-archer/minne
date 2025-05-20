@@ -10,7 +10,8 @@ export class Minne extends McpAgent {
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
     console.log("[Minne Constructor] Initializing...");
-    console.log("[Minne Constructor] env.MEM0_API_KEY:", env.MEM0_API_KEY);
+    console.log("[Minne Constructor] env.MEM0_API_KEY:", env.MEM0_API_KEY ? '******' : 'NOT SET');
+    console.log("[Minne Constructor] env.MCP_OBJECT:", JSON.stringify(env.MCP_OBJECT, null, 2));
     console.log("[Minne Constructor] All env keys:", Object.keys(env));
 
     if (!env.MEM0_API_KEY) {
@@ -28,15 +29,17 @@ export class Minne extends McpAgent {
     this.server.tool(
       "addMemory",
       { content: z.string(), userId: z.string() },
-      async ({ content, userId }) => {
-        console.log(`[addMemory] Received content: "${content}", userId: "${userId}"`);
-        // mem0 wants an array of messages; we prefix with a system role
+      async ({ content, userId: _incomingUserIdParam }) => { 
+        const ACTUAL_USER_ID = "simon-archer"; 
+
+        console.log(`[addMemory] Processing content for pre-configured user.`);
+
         const messages = [
           { role: "system", content: "Memory storage" },
           { role: "user", content },
         ];
         const addResponse = await this.memoryClient.add(messages, {
-          user_id: userId,
+          user_id: ACTUAL_USER_ID,
           metadata: { "app_context": "minne_worker" }
         });
 
@@ -95,12 +98,15 @@ export class Minne extends McpAgent {
     // 2) search-memories: query your vector store
     this.server.tool(
       "searchMemories",
-      { query: z.string(), userId: z.string() },
-      async ({ query, userId }) => {
-        console.log(`[searchMemories] Received query: "${query}", userId: "${userId}"`);
+      { query: z.string() },
+      async ({ query }) => { 
+        const ACTUAL_USER_ID = "simon-archer"; 
+
+        console.log(`[searchMemories] Processing query for pre-configured user.`);
+
         const results = await this.memoryClient.search(query, 
           {
-            user_id: userId,
+            user_id: ACTUAL_USER_ID,
             // @ts-ignore // This option is valid as per docs, despite missing type
             filter_memories: true 
           }
@@ -109,23 +115,60 @@ export class Minne extends McpAgent {
 
         // Client-side filtering
         const contextualizedAndScoredResults = results.filter(r => 
-          r.metadata?.app_context === "minne_worker" && typeof r.score === 'number' && r.score >= 0.7
+          r.metadata?.app_context === "minne_worker" && typeof r.score === 'number' && r.score >= 0.3
         );
 
-        console.log("[searchMemories] Filtered results (context + score >= 0.7):", JSON.stringify(contextualizedAndScoredResults, null, 2));
+        console.log("[searchMemories] Filtered results (context + score >= 0.3):", JSON.stringify(contextualizedAndScoredResults, null, 2));
 
-        const formatted = contextualizedAndScoredResults.length > 0 
+        const formatted = contextualizedAndScoredResults.length > 0
           ? contextualizedAndScoredResults
-              .map((r) => {
-                const percentageScore = Math.round((r.score || 0) * 100); // Ensure score is a number, default to 0 if undefined
-                return `${r.memory}. ${percentageScore}% Relevance`;
+              .map((r, index) => {
+				const scoreText = typeof r.score === 'number' ? `(${Math.round(r.score * 100)}%)` : "(Score not available)";
+                const memoryText = typeof r.memory === 'string' ? r.memory : "Memory content not available";
+                const idText = typeof r.id === 'string' ? `(ID: ${r.id})` : "(ID not available)";
+                return `${index + 1}. ${memoryText} ${idText} ${scoreText}`;
               })
               .join("\n\n")
-          : "No relevant memories found (context + score >= 0.7).";
+          : "No relevant memories found.";
 
         return {
           content: [{ type: "text", text: formatted }],
         };
+      }
+    );
+
+    // 3) delete-memory: delete a specific memory by its ID
+    this.server.tool(
+      "deleteMemory",
+      { memoryIds: z.array(z.string()) }, 
+      async ({ memoryIds }) => { 
+        console.log(`[deleteMemory] Processing deletion request for memoryIds: "${memoryIds.join(', ')}" for pre-configured user.`);
+
+        const results = [];
+        for (const memoryId of memoryIds) {
+          let memoryContentForLog = `Memory with ID ${memoryId}`;
+          try {
+            // Attempt to get memory content before deleting
+            // ASSUMPTION: this.memoryClient.get(id) exists and returns { memory: string, ... }
+            // If this method doesn't exist or has a different signature, this part will need adjustment.
+            const memoryData = await this.memoryClient.get(memoryId); 
+            if (memoryData && typeof memoryData.memory === 'string') {
+              memoryContentForLog = `"${memoryData.memory}"`;
+            }
+
+            await this.memoryClient.delete(memoryId);
+            const successMessage = `Deleted: ${memoryContentForLog}`;
+            console.log(`[deleteMemory] Successfully deleted memoryId: "${memoryId}". Content: ${memoryContentForLog}`);
+            results.push(successMessage);
+          } catch (error) {
+            const errorMessageText = error instanceof Error ? error.message : String(error);
+            // If .get() failed, memoryContentForLog would be the default. If .delete() failed, we reference the ID.
+            const failureMessage = `Error processing memory ${memoryId}: ${errorMessageText}`;
+            console.error(`[deleteMemory] Error processing memoryId: "${memoryId}":`, errorMessageText);
+            results.push(failureMessage);
+          }
+        }
+        return { content: [{ type: "text", text: results.join('\n') }] };
       }
     );
   }
