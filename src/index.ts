@@ -1,77 +1,83 @@
 import { McpAgent } from "agents/mcp";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { MemoryClient } from "mem0ai";
 
-// Define our MCP agent with tools
 export class Minne extends McpAgent {
-	server = new McpServer({
-		name: "Authless Calculator",
-		version: "1.0.0",
-	});
+  server = new McpServer({ name: "Authless Memory", version: "1.0.0" });
+  private memoryClient: MemoryClient;
 
-	async init() {
-		// Simple addition tool
-		this.server.tool(
-			"add",
-			{ a: z.number(), b: z.number() },
-			async ({ a, b }) => ({
-				content: [{ type: "text", text: String(a + b) }],
-			})
-		);
+  constructor(state: DurableObjectState, env: Env) {
+    super(state, env);
+    console.log("[Minne Constructor] Initializing...");
+    console.log("[Minne Constructor] env.MEM0_API_KEY:", env.MEM0_API_KEY);
+    console.log("[Minne Constructor] All env keys:", Object.keys(env));
 
-		// Calculator tool with multiple operations
-		this.server.tool(
-			"calculate",
-			{
-				operation: z.enum(["add", "subtract", "multiply", "divide"]),
-				a: z.number(),
-				b: z.number(),
-			},
-			async ({ operation, a, b }) => {
-				let result: number;
-				switch (operation) {
-					case "add":
-						result = a + b;
-						break;
-					case "subtract":
-						result = a - b;
-						break;
-					case "multiply":
-						result = a * b;
-						break;
-					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
-						result = a / b;
-						break;
-				}
-				return { content: [{ type: "text", text: String(result) }] };
-			}
-		);
-	}
+    if (!env.MEM0_API_KEY) {
+      console.error("[Minne Constructor] MEM0_API_KEY is not found in env!");
+    }
+    this.memoryClient = new MemoryClient({
+      apiKey: env.MEM0_API_KEY,
+    });
+  }
+
+  async init() {
+    // … your existing tools …
+
+    // 1) add-memory: store a new memory
+    this.server.tool(
+      "addMemory",
+      { content: z.string(), userId: z.string() },
+      async ({ content, userId }) => {
+        console.log(`[addMemory] Received content: "${content}", userId: "${userId}"`);
+        // mem0 wants an array of messages; we prefix with a system role
+        const messages = [
+          { role: "system", content: "Memory storage" },
+          { role: "user", content },
+        ];
+        await this.memoryClient.add(messages, { user_id: userId });
+        return { content: [{ type: "text", text: "Memory added." }] };
+      }
+    );
+
+    // 2) search-memories: query your vector store
+    this.server.tool(
+      "searchMemories",
+      { query: z.string(), userId: z.string() },
+      async ({ query, userId }) => {
+        console.log(`[searchMemories] Received query: "${query}", userId: "${userId}"`);
+        const results = await this.memoryClient.search(query, {
+          user_id: userId,
+        });
+        console.log("[searchMemories] Raw results from memoryClient.search():", JSON.stringify(results, null, 2));
+
+        const formatted = results
+          .map((r) => `Memory: ${r.memory}\nScore: ${r.score}`)
+          .join("\n\n");
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatted || "No memories found",
+            },
+          ],
+        };
+      }
+    );
+  }
 }
 
 export default {
-	fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url);
-
-		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-			// @ts-ignore
-			return Minne.serveSSE("/sse").fetch(request, env, ctx);
-		}
-
-		if (url.pathname === "/mcp") {
-			// @ts-ignore
-			return Minne.serve("/mcp").fetch(request, env, ctx);
-		}
-
-		return new Response("Not found", { status: 404 });
-	},
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const url = new URL(request.url);
+    if (url.pathname === "/sse" || url.pathname === "/sse/message") {
+      // @ts-ignore
+      return Minne.serveSSE("/sse").fetch(request, env, ctx);
+    }
+    if (url.pathname === "/mcp") {
+      // @ts-ignore
+      return Minne.serve("/mcp").fetch(request, env, ctx);
+    }
+    return new Response("Not found", { status: 404 });
+  }
 };

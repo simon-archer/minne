@@ -13,11 +13,12 @@
 	"devDependencies": {
 		"@types/node": "^22.15.19",
 		"typescript": "^5.8.3",
-		"wrangler": "^4.15.2"
+		"wrangler": "^4.16.0"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.11.1",
 		"agents": "^0.0.80",
+		"mem0ai": "^2.1.25",
 		"zod": "^3.24.4"
 	}
 }
