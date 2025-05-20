@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 // Define our MCP agent with tools
-export class MyMCP extends McpAgent {
+export class Minne extends McpAgent {
 	server = new McpServer({
 		name: "Authless Calculator",
 		version: "1.0.0",
@@ -64,12 +64,12 @@ export default {
 
 		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
 			// @ts-ignore
-			return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
+			return Minne.serveSSE("/sse").fetch(request, env, ctx);
 		}
 
 		if (url.pathname === "/mcp") {
 			// @ts-ignore
-			return MyMCP.serve("/mcp").fetch(request, env, ctx);
+			return Minne.serve("/mcp").fetch(request, env, ctx);
 		}
 
 		return new Response("Not found", { status: 404 });
