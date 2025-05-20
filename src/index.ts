@@ -35,7 +35,10 @@ export class Minne extends McpAgent {
           { role: "system", content: "Memory storage" },
           { role: "user", content },
         ];
-        await this.memoryClient.add(messages, { user_id: userId });
+        await this.memoryClient.add(messages, {
+          user_id: userId,
+          metadata: { "app_context": "minne_worker" }
+        });
         return { content: [{ type: "text", text: "Memory added." }] };
       }
     );
@@ -46,21 +49,33 @@ export class Minne extends McpAgent {
       { query: z.string(), userId: z.string() },
       async ({ query, userId }) => {
         console.log(`[searchMemories] Received query: "${query}", userId: "${userId}"`);
-        const results = await this.memoryClient.search(query, {
-          user_id: userId,
-        });
+        const results = await this.memoryClient.search(query, 
+          {
+            user_id: userId,
+            // @ts-ignore // This option is valid as per docs, despite missing type
+            filter_memories: true 
+          }
+        );
         console.log("[searchMemories] Raw results from memoryClient.search():", JSON.stringify(results, null, 2));
 
-        const formatted = results
-          .map((r) => `Memory: ${r.memory}\nScore: ${r.score}`)
-          .join("\n\n");
+        // Client-side filtering
+        const contextualizedAndScoredResults = results.filter(r => 
+          r.metadata?.app_context === "minne_worker" && typeof r.score === 'number' && r.score >= 0.7
+        );
+
+        console.log("[searchMemories] Filtered results (context + score >= 0.7):", JSON.stringify(contextualizedAndScoredResults, null, 2));
+
+        const formatted = contextualizedAndScoredResults.length > 0 
+          ? contextualizedAndScoredResults
+              .map((r) => {
+                const percentageScore = Math.round((r.score || 0) * 100); // Ensure score is a number, default to 0 if undefined
+                return `${r.memory}. ${percentageScore}% Relevance`;
+              })
+              .join("\n\n")
+          : "No relevant memories found (context + score >= 0.7).";
+
         return {
-          content: [
-            {
-              type: "text",
-              text: formatted || "No memories found",
-            },
-          ],
+          content: [{ type: "text", text: formatted }],
         };
       }
     );

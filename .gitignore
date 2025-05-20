@@ -2,3 +2,4 @@
 /wrangler.toml
 .env
 .env*
+.wrangler
