@@ -35,11 +35,60 @@ export class Minne extends McpAgent {
           { role: "system", content: "Memory storage" },
           { role: "user", content },
         ];
-        await this.memoryClient.add(messages, {
+        const addResponse = await this.memoryClient.add(messages, {
           user_id: userId,
           metadata: { "app_context": "minne_worker" }
         });
-        return { content: [{ type: "text", text: "Memory added." }] };
+
+        console.log('[addMemory] Response from memoryClient.add():', JSON.stringify(addResponse, null, 2));
+
+        let extractedTexts: string[] = [];
+
+        if (typeof addResponse === 'string') {
+            extractedTexts.push(addResponse);
+        } else if (Array.isArray(addResponse)) {
+            // Check for the new structure: [{ data: { memory: "..." } }]
+            if (addResponse.length > 0 && typeof addResponse[0] === 'object' && addResponse[0] !== null && (addResponse[0] as any).data && typeof (addResponse[0] as any).data.memory === 'string') {
+                addResponse.forEach((item: any) => {
+                    if (item && item.data && typeof item.data.memory === 'string') {
+                        extractedTexts.push(item.data.memory);
+                    }
+                });
+            } else if (addResponse.every(item => typeof item === 'string')) {
+                extractedTexts = addResponse; // Array of strings directly
+            } else {
+                // Attempt to extract from array of objects, assuming 'text' or 'memory' property directly on item
+                addResponse.forEach((item: any) => { 
+                    if (item && typeof item.text === 'string') {
+                        extractedTexts.push(item.text);
+                    } else if (item && typeof item.memory === 'string') { 
+                        extractedTexts.push(item.memory);
+                    }
+                });
+            }
+        } else if (typeof addResponse === 'object' && addResponse !== null) {
+            const resp = addResponse as any; // Cast to any for easier property access
+            if (Array.isArray(resp.memories) && resp.memories.length > 0) {
+                resp.memories.forEach((mem: any) => { // mem is any
+                    if (mem && typeof mem.text === 'string') {
+                        extractedTexts.push(mem.text);
+                    } else if (mem && typeof mem.memory === 'string') { // Fallback for mem.memory
+                        extractedTexts.push(mem.memory);
+                    }
+                });
+            }
+            // If no texts extracted from .memories array, or .memories doesn't exist,
+            // try a top-level .message or .text property as a fallback for the whole response
+            if (extractedTexts.length === 0 && typeof resp.message === 'string') {
+                extractedTexts.push(resp.message);
+            } else if (extractedTexts.length === 0 && typeof resp.text === 'string') {
+                extractedTexts.push(resp.text);
+            }
+        }
+
+        const processedText = extractedTexts.length > 0 ? extractedTexts.join('; ') : "Memory processed (no specific text returned by API).";
+
+        return { content: [{ type: "text", text: `${processedText}` }] };
       }
     );
 
