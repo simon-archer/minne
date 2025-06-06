@@ -1,0 +1,9 @@
+# Example environment variables for local development with Wrangler.
+# Copy this file to .dev.vars and fill in your actual values.
+# DO NOT commit your actual .dev.vars file to version control.
+
+MEM0_API_KEY="YOUR_MEM0_API_KEY_HERE"
+GITHUB_CLIENT_ID="YOUR_GITHUB_OAUTH_APP_CLIENT_ID_HERE"
+GITHUB_CLIENT_SECRET="YOUR_GITHUB_OAUTH_APP_CLIENT_SECRET_HERE"
+JWT_SECRET="YOUR_SECURE_RANDOM_STRING_FOR_JWT_SIGNING_HERE"
+COOKIE_ENCRYPTION_KEY="YOUR_SECURE_RANDOM_STRING_FOR_COOKIE_ENCRYPTION_HERE"

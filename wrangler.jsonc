@@ -32,11 +32,19 @@
 			}
 		]
 	},
+	"kv_namespaces": [
+		{
+			"binding": "OAUTH_KV",
+			"id": "b0ef4d9fbb5340bb8ae425aef45932e8",
+			"preview_id": "eb15eb1e506c44a3b5060fbaeeff200a"
+		}
+	],
 	"observability": {
 		"enabled": true
 	},
 	"vars": {
-		"MEM0_API_KEY": "placeholder_for_typegen_only"
+		"MEM0_API_KEY": "placeholder_for_typegen_only",
+		"COOKIE_ENCRYPTION_KEY": "placeholder_for_typegen_only"
 	}
 	/**
 	 * Smart Placement

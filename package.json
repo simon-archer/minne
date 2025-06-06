@@ -16,9 +16,12 @@
 		"wrangler": "^4.16.0"
 	},
 	"dependencies": {
+		"@cloudflare/workers-oauth-provider": "^0.0.5",
 		"@modelcontextprotocol/sdk": "^1.11.1",
 		"agents": "^0.0.80",
+		"hono": "^4.7.11",
 		"mem0ai": "^2.1.25",
+		"octokit": "^5.0.3",
 		"zod": "^3.24.4"
 	}
 }
