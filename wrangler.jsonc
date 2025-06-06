@@ -43,9 +43,7 @@
 		"enabled": true
 	},
 	"vars": {
-		"MEM0_API_KEY": "placeholder_for_typegen_only",
-		"COOKIE_ENCRYPTION_KEY": "placeholder_for_typegen_only"
-	}
+	},
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
