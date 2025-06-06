@@ -57,70 +57,6 @@ export class Minne extends McpAgent<Env, {}, Props> {
     const login = this.props?.login;
     const accessToken = this.props?.accessToken;
 
-    // Hello, world! (from example)
-    this.server.tool("add", "Add two numbers the way only MCP can", { a: z.number(), b: z.number() }, async ({ a, b }) => ({
-      content: [{ type: "text", text: String(a + b) }],
-    }));
-
-    // Use the upstream access token to facilitate tools (from example)
-    this.server.tool("userInfoOctokit", "Get user info from GitHub, via Octokit", {}, async () => {
-      if (!accessToken) {
-        return { content: [{ type: "text", text: "Error: User not authenticated or access token not available." }] };
-      }
-      const octokit = new Octokit({ auth: accessToken });
-      try {
-        const userInfo = await octokit.rest.users.getAuthenticated();
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(userInfo.data),
-            },
-          ],
-        };
-      } catch (error) {
-        console.error("[userInfoOctokit] Error fetching user info:", error);
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        return { content: [{ type: "text", text: `Error fetching GitHub user info: ${errorMessage}` }] };
-      }
-    });
-
-    // Dynamically add tools based on the user's login (from example)
-    if (login && ALLOWED_USERNAMES.has(login)) {
-      this.server.tool(
-        "generateImage",
-        "Generate an image using the `flux-1-schnell` model. Works best with 8 steps.",
-        {
-          prompt: z.string().describe("A text description of the image you want to generate."),
-          steps: z
-            .number()
-            .min(4)
-            .max(8)
-            .default(4)
-            .describe(
-              "The number of diffusion steps; higher values can improve quality but take longer. Must be between 4 and 8, inclusive.",
-            ),
-        },
-        async ({ prompt, steps }) => {
-          if (!this.env.AI) {
-            return { content: [{ type: "text", text: "Error: AI environment not configured." }] };
-          }
-          try {
-            const response = await this.env.AI.run("@cf/black-forest-labs/flux-1-schnell", {
-              prompt,
-              steps,
-            });
-            // @ts-ignore - response.image is expected based on model
-            return { content: [{ type: "image", data: response.image!, mimeType: "image/jpeg" }] };
-          } catch (error) {
-            console.error("[generateImage] Error generating image:", error);
-            const errorMessage = error instanceof Error ? error.message : "Unknown error";
-            return { content: [{ type: "text", text: `Error generating image: ${errorMessage}` }] };
-          }
-        },
-      );
-    }
-
     // Existing Memory Tools - Adapted for authenticated user
 
     // 1) add-memory: store a new memory for the authenticated user
@@ -215,9 +151,9 @@ export class Minne extends McpAgent<Env, {}, Props> {
           console.log("[searchMemories] Raw results from memoryClient.search():", JSON.stringify(results, null, 2));
 
           const contextualizedAndScoredResults = results.filter(r =>
-            r.metadata?.app_context === "minne_worker" && typeof r.score === 'number' && r.score >= 0.3
+            r.metadata?.app_context === "minne_worker" && typeof r.score === 'number' && r.score >= 0.5
           );
-          console.log("[searchMemories] Filtered results (context + score >= 0.3):", JSON.stringify(contextualizedAndScoredResults, null, 2));
+          console.log("[searchMemories] Filtered results (context + score >= 0.5):", JSON.stringify(contextualizedAndScoredResults, null, 2));
 
           const formatted = contextualizedAndScoredResults.length > 0
             ? contextualizedAndScoredResults
