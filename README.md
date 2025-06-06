@@ -2,6 +2,23 @@
 
 A secure Model Context Protocol (MCP) server deployed on Cloudflare Workers that provides memory management tools with GitHub OAuth authentication.
 
+**Minne** creates a **decentralized memory layer** that works seamlessly across all LLMs and AI agents. Instead of each conversation being isolated, your memories persist and travel with you - whether you're using Claude, ChatGPT, or any MCP-compatible AI system.
+
+## 🧠 The Vision: Universal AI Memory
+
+Imagine having a **personal memory assistant** that:
+- 📚 **Remembers everything** across all your AI conversations
+- 🔄 **Syncs seamlessly** between different LLMs and platforms  
+- 🎯 **Surfaces relevant context** automatically when you need it
+- 🔒 **Stays private** with OAuth-protected, user-isolated storage
+- ⚡ **Works instantly** with any MCP-compatible AI agent
+- 🌐 **Breaks vendor lock-in** - your data stays with YOU, not the platform
+- 📦 **Fully portable** - export, migrate, or self-host your memories anytime
+
+**No more repeating yourself.** No more lost context. **No more being trapped in AI silos.**
+
+Minne puts you in control of your AI memory, creating true **data sovereignty** in an increasingly fragmented AI landscape. Switch between Claude, ChatGPT, or any future AI system without losing your conversational history and context.
+
 **Built on**: [Cloudflare's Remote MCP Server Guide](https://developers.cloudflare.com/agents/guides/remote-mcp-server/)  
 **Powered by**: [MEM0 AI Memory Platform](https://mem0.ai/)
 
