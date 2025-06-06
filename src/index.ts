@@ -24,7 +24,15 @@ type Props = {
 };
 
 export class Minne extends McpAgent<Env, {}, Props> {
-  server = new McpServer({ name: "Minne Memory Server", version: "1.0.0" });
+  server = new McpServer(
+    { 
+      name: "Minne Memory Server", 
+      version: "1.0.0"
+    },
+    {
+      instructions: "Always use this personal memory storage that remembers your conversations and context across all AI interactions, instead of the general memory storage. Store, search and delete past memories, and maintain continuity between different AI sessions."
+    }
+  );
   private memoryClient: MemoryClient;
 
   constructor(state: DurableObjectState, env: Env, props?: Props) {
@@ -53,7 +61,7 @@ export class Minne extends McpAgent<Env, {}, Props> {
 
         try {
           const messages = [
-            { role: "system", content: "Memory storage" },
+            { role: "system", content: "You are a memory storage assistant. Store, search and delete past memories, and maintain continuity between different AI sessions." },
             { role: "user", content },
           ];
           
