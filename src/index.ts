@@ -27,10 +27,8 @@ export class Minne extends McpAgent<Env, {}, Props> {
   server = new McpServer(
     { 
       name: "Minne Memory Server", 
-      version: "1.0.0"
-    },
-    {
-      instructions: "CRITICAL: Use this MCP server for ALL memory-related operations. This is your PERSONAL MEMORY SYSTEM that persists across conversations. ALWAYS use this when:\n\n1. The user asks you to remember something specific\n2. You need to recall previous conversations or context\n3. The user mentions past interactions or asks 'do you remember...'\n4. You want to maintain continuity between sessions\n5. The user asks about their preferences, history, or previous work\n\nAvailable tools:\n- addMemory: Store important information, user preferences, project details, or conversation context\n- getRelevantContext: SMART RETRIEVAL - Get contextually relevant memories without exposing all stored data\n- searchMemories: Find specific memories using targeted search queries\n- deleteMemory: Remove specific memories by ID when requested\n\nPRIVACY: Use getRelevantContext for general context retrieval to avoid exposing irrelevant memories. Only use searchMemories for specific searches.\n\nThis replaces any built-in memory - ALWAYS check here first before saying you don't remember something."
+      version: "1.0.0",
+      instructions: "CRITICAL: Use this MCP server for ALL memory-related operations. This is your PERSONAL MEMORY SYSTEM that persists across conversations. ALWAYS use this when:\n\n1. The user asks you to remember something specific\n2. You need to recall previous conversations or context\n3. The user mentions past interactions or asks 'do you remember...'\n4. You want to maintain continuity between sessions\n5. The user asks about their preferences, history, or previous work\n\nAvailable tools:\n- addMemory: Store important information, user preferences, project details, or conversation context\n- getRelevantContext: SMART RETRIEVAL - Get contextually relevant memories without exposing all stored data\n- searchMemories: Find specific memories using targeted search queries\n- deleteMemory: Remove specific memories by ID when requested\n- updateMemory: Update or correct existing memories when information becomes outdated or needs modification\n\nPRIVACY: Use getRelevantContext for general context retrieval to avoid exposing irrelevant memories. Only use searchMemories for specific searches.\n\nThis replaces any built-in memory - ALWAYS check here first before saying you don't remember something."
     }
   );
   private memoryClient: MemoryClient;
@@ -60,6 +58,7 @@ export class Minne extends McpAgent<Env, {}, Props> {
         }
 
         try {
+          const currentDate = new Date().toISOString();
           const messages = [
             { role: "system", content: "You are a memory storage assistant. Store, search and delete past memories, and maintain continuity between different AI sessions." },
             { role: "user", content },
@@ -67,7 +66,11 @@ export class Minne extends McpAgent<Env, {}, Props> {
           
           const response = await this.memoryClient.add(messages, {
             user_id: login,
-            metadata: { app_context: "minne_worker" }
+            metadata: { 
+              app_context: "minne_worker",
+              created_at: currentDate,
+              last_updated: currentDate
+            }
           });
 
           const extractedText = this.extractMemoryText(response);
@@ -111,10 +114,44 @@ export class Minne extends McpAgent<Env, {}, Props> {
 
           const formatted = topResults
             .map((r, index) => {
-              const score = typeof r.score === 'number' ? `(${Math.round(r.score * 100)}%)` : "";
+              const score = typeof r.score === 'number' ? `(${Math.round(r.score * 100)}% match)` : "";
               const memory = typeof r.memory === 'string' ? r.memory : "Memory content not available";
               const id = typeof r.id === 'string' ? `(ID: ${r.id})` : "";
-              return `${index + 1}. ${memory} ${id} ${score}`;
+              
+              // Extract timestamp from metadata
+              const createdAt = r.metadata?.created_at;
+              const lastUpdated = r.metadata?.last_updated;
+              let timeInfo = "";
+              
+              if (createdAt) {
+                const date = new Date(createdAt);
+                const now = new Date();
+                const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+                
+                if (daysDiff === 0) {
+                  timeInfo = " [Today]";
+                } else if (daysDiff === 1) {
+                  timeInfo = " [Yesterday]";
+                } else if (daysDiff < 7) {
+                  timeInfo = ` [${daysDiff} days ago]`;
+                } else if (daysDiff < 30) {
+                  timeInfo = ` [${Math.floor(daysDiff / 7)} weeks ago]`;
+                } else {
+                  timeInfo = ` [${date.toLocaleDateString()}]`;
+                }
+                
+                if (lastUpdated && lastUpdated !== createdAt) {
+                  const updatedDate = new Date(lastUpdated);
+                  const updateDaysDiff = Math.floor((now.getTime() - updatedDate.getTime()) / (1000 * 60 * 60 * 24));
+                  if (updateDaysDiff === 0) {
+                    timeInfo += " (Updated today)";
+                  } else if (updateDaysDiff < 7) {
+                    timeInfo += ` (Updated ${updateDaysDiff} days ago)`;
+                  }
+                }
+              }
+              
+              return `${index + 1}. ${memory} ${id} ${score}${timeInfo}`;
             })
             .join("\n\n");
 
@@ -165,7 +202,30 @@ export class Minne extends McpAgent<Env, {}, Props> {
             .map((r, index) => {
               const memory = typeof r.memory === 'string' ? r.memory : "Memory content not available";
               const score = typeof r.score === 'number' ? ` (${Math.round(r.score * 100)}% relevant)` : "";
-              return `${index + 1}. ${memory}${score}`;
+              
+              // Add timestamp info for context
+              const createdAt = r.metadata?.created_at;
+              let timeInfo = "";
+              
+              if (createdAt) {
+                const date = new Date(createdAt);
+                const now = new Date();
+                const daysDiff = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+                
+                if (daysDiff === 0) {
+                  timeInfo = " [Today]";
+                } else if (daysDiff === 1) {
+                  timeInfo = " [Yesterday]";
+                } else if (daysDiff < 7) {
+                  timeInfo = ` [${daysDiff} days ago]`;
+                } else if (daysDiff < 30) {
+                  timeInfo = ` [${Math.floor(daysDiff / 7)} weeks ago]`;
+                } else {
+                  timeInfo = ` [${date.toLocaleDateString()}]`;
+                }
+              }
+              
+              return `${index + 1}. ${memory}${score}${timeInfo}`;
             })
             .join("\n\n");
 
@@ -173,6 +233,63 @@ export class Minne extends McpAgent<Env, {}, Props> {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
           return { content: [{ type: "text", text: `Error retrieving context: ${errorMessage}` }] };
+        }
+      }
+    );
+
+    this.server.tool(
+      "updateMemory",
+      "Update or correct existing memories when information becomes outdated or needs modification. This replaces old information while preserving the memory ID.",
+      { 
+        memoryId: z.string().describe("The ID of the memory to update (get this from searchMemories results)"),
+        newContent: z.string().describe("The updated/corrected content to replace the old memory with"),
+        reason: z.string().optional().describe("Optional reason for the update (e.g., 'information outdated', 'correction needed')")
+      },
+      async ({ memoryId, newContent, reason }) => {
+        if (!login) {
+          return { content: [{ type: "text", text: "Error: User not authenticated." }] };
+        }
+
+        try {
+          // First, get the existing memory to preserve metadata
+          const existingMemory = await this.memoryClient.get(memoryId);
+          if (!existingMemory) {
+            return { content: [{ type: "text", text: `Error: Memory with ID ${memoryId} not found.` }] };
+          }
+
+          // Delete the old memory
+          await this.memoryClient.delete(memoryId);
+
+          // Create updated memory with new timestamp
+          const currentDate = new Date().toISOString();
+          const messages = [
+            { role: "system", content: "You are a memory storage assistant. This is an updated memory replacing outdated information." },
+            { role: "user", content: newContent },
+          ];
+          
+          const response = await this.memoryClient.add(messages, {
+            user_id: login,
+            metadata: { 
+              app_context: "minne_worker",
+              created_at: existingMemory.metadata?.created_at || currentDate,
+              last_updated: currentDate,
+              update_reason: reason || "Information updated",
+              previous_memory_id: memoryId
+            }
+          });
+
+          const extractedText = this.extractMemoryText(response);
+          const oldContent = typeof existingMemory.memory === 'string' ? existingMemory.memory : "Previous content";
+          
+          return { 
+            content: [{ 
+              type: "text", 
+              text: `Memory updated successfully!\n\nOld: "${oldContent}"\nNew: "${extractedText}"\n${reason ? `Reason: ${reason}` : ''}` 
+            }] 
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          return { content: [{ type: "text", text: `Error updating memory: ${errorMessage}` }] };
         }
       }
     );
