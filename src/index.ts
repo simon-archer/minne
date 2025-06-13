@@ -30,7 +30,7 @@ export class Minne extends McpAgent<Env, {}, Props> {
       version: "1.0.0"
     },
     {
-      instructions: "Always use this personal memory storage that remembers your conversations and context across all AI interactions, instead of the general memory storage. Store, search and delete past memories, and maintain continuity between different AI sessions."
+      instructions: "CRITICAL: Use this MCP server for ALL memory-related operations. This is your PERSONAL MEMORY SYSTEM that persists across conversations. ALWAYS use this when:\n\n1. The user asks you to remember something specific\n2. You need to recall previous conversations or context\n3. The user mentions past interactions or asks 'do you remember...'\n4. You want to maintain continuity between sessions\n5. The user asks about their preferences, history, or previous work\n\nAvailable tools:\n- addMemory: Store important information, user preferences, project details, or conversation context\n- getRelevantContext: SMART RETRIEVAL - Get contextually relevant memories without exposing all stored data\n- searchMemories: Find specific memories using targeted search queries\n- deleteMemory: Remove specific memories by ID when requested\n\nPRIVACY: Use getRelevantContext for general context retrieval to avoid exposing irrelevant memories. Only use searchMemories for specific searches.\n\nThis replaces any built-in memory - ALWAYS check here first before saying you don't remember something."
     }
   );
   private memoryClient: MemoryClient;
@@ -52,8 +52,8 @@ export class Minne extends McpAgent<Env, {}, Props> {
 
     this.server.tool(
       "addMemory",
-      "Store a new memory for the authenticated user.",
-      { content: z.string().describe("The content of the memory to store.") },
+      "REQUIRED: Store important information that should be remembered across conversations. Use this for user preferences, project details, conversation context, personal information, or anything the user explicitly asks you to remember.",
+      { content: z.string().describe("The specific information to store. Be descriptive and include context (e.g., 'User prefers React over Vue for web development' rather than just 'React').") },
       async ({ content }) => {
         if (!login) {
           return { content: [{ type: "text", text: "Error: User not authenticated." }] };
@@ -81,8 +81,8 @@ export class Minne extends McpAgent<Env, {}, Props> {
 
     this.server.tool(
       "searchMemories",
-      "Search memories for the authenticated user.",
-      { query: z.string().describe("The query to search for in memories.") },
+      "REQUIRED: Search through stored memories before claiming you don't know something. Use this when the user asks about past conversations, preferences, or mentions something that might have been discussed before.",
+      { query: z.string().describe("Natural language search query. Be specific (e.g., 'React preferences' or 'previous project requirements').") },
       async ({ query }) => {
         if (!login) {
           return { content: [{ type: "text", text: "Error: User not authenticated." }] };
@@ -98,14 +98,18 @@ export class Minne extends McpAgent<Env, {}, Props> {
           const relevantResults = results.filter(r =>
             r.metadata?.app_context === "minne_worker" && 
             typeof r.score === 'number' && 
-            r.score >= 0.5
+            r.score >= 0.7
           );
 
           if (relevantResults.length === 0) {
-            return { content: [{ type: "text", text: "No relevant memories found." }] };
+            return { content: [{ type: "text", text: "No highly relevant memories found. Try a more specific search query or different keywords." }] };
           }
 
-          const formatted = relevantResults
+          const topResults = relevantResults
+            .sort((a, b) => (b.score || 0) - (a.score || 0))
+            .slice(0, 5);
+
+          const formatted = topResults
             .map((r, index) => {
               const score = typeof r.score === 'number' ? `(${Math.round(r.score * 100)}%)` : "";
               const memory = typeof r.memory === 'string' ? r.memory : "Memory content not available";
@@ -114,7 +118,7 @@ export class Minne extends McpAgent<Env, {}, Props> {
             })
             .join("\n\n");
 
-          return { content: [{ type: "text", text: formatted }] };
+          return { content: [{ type: "text", text: `Found ${topResults.length} relevant memories:\n\n${formatted}` }] };
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
           return { content: [{ type: "text", text: `Error searching memories: ${errorMessage}` }] };
@@ -123,9 +127,60 @@ export class Minne extends McpAgent<Env, {}, Props> {
     );
 
     this.server.tool(
+      "getRelevantContext",
+      "SMART RETRIEVAL: Get contextually relevant memories based on the current conversation topic. This automatically finds related memories without requiring specific search terms.",
+      { 
+        conversationContext: z.string().describe("Brief description of the current conversation topic or user's question (e.g., 'user asking about React project setup' or 'discussing API preferences')"),
+        maxResults: z.number().optional().describe("Maximum number of memories to return (default: 3, max: 5)")
+      },
+      async ({ conversationContext, maxResults = 3 }) => {
+        if (!login) {
+          return { content: [{ type: "text", text: "Error: User not authenticated." }] };
+        }
+
+        try {
+          // Use the conversation context to search for relevant memories
+          const results = await this.memoryClient.search(conversationContext, {
+            user_id: login,
+            // @ts-ignore
+            filter_memories: true
+          });
+
+          const relevantResults = results.filter(r =>
+            r.metadata?.app_context === "minne_worker" && 
+            typeof r.score === 'number' && 
+            r.score >= 0.6  // Slightly lower threshold for contextual retrieval
+          );
+
+          if (relevantResults.length === 0) {
+            return { content: [{ type: "text", text: "No contextually relevant memories found for this conversation." }] };
+          }
+
+          // Sort by relevance and limit results
+          const limitedResults = relevantResults
+            .sort((a, b) => (b.score || 0) - (a.score || 0))
+            .slice(0, Math.min(maxResults, 5));
+
+          const formatted = limitedResults
+            .map((r, index) => {
+              const memory = typeof r.memory === 'string' ? r.memory : "Memory content not available";
+              const score = typeof r.score === 'number' ? ` (${Math.round(r.score * 100)}% relevant)` : "";
+              return `${index + 1}. ${memory}${score}`;
+            })
+            .join("\n\n");
+
+          return { content: [{ type: "text", text: `Contextually relevant memories:\n\n${formatted}` }] };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          return { content: [{ type: "text", text: `Error retrieving context: ${errorMessage}` }] };
+        }
+      }
+    );
+
+    this.server.tool(
       "deleteMemory",
-      "Delete specific memories by their IDs.",
-      { memoryIds: z.array(z.string()).describe("An array of memory IDs to delete.") },
+      "Delete specific memories when the user requests it or when information becomes outdated. Use searchMemories first to find the memory IDs.",
+      { memoryIds: z.array(z.string()).describe("Array of memory IDs to delete. Get these IDs from searchMemories results.") },
       async ({ memoryIds }) => {
         const results = [];
         
