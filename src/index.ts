@@ -117,10 +117,12 @@ export class Minne extends McpAgent<Env, {}, Props> {
               const score = typeof r.score === 'number' ? `(${Math.round(r.score * 100)}% match)` : "";
               const memory = typeof r.memory === 'string' ? r.memory : "Memory content not available";
               const id = typeof r.id === 'string' ? `(ID: ${r.id})` : "";
+              const categories = Array.isArray(r.categories) && r.categories.length > 0 
+                ? `[Categories: ${r.categories.join(', ')}]` 
+                : "";
               
               // Extract timestamp from metadata
               const createdAt = r.metadata?.created_at;
-              const lastUpdated = r.metadata?.last_updated;
               let timeInfo = "";
               
               if (createdAt) {
@@ -140,8 +142,8 @@ export class Minne extends McpAgent<Env, {}, Props> {
                   timeInfo = ` [${date.toLocaleDateString()}]`;
                 }
                 
-                if (lastUpdated && lastUpdated !== createdAt) {
-                  const updatedDate = new Date(lastUpdated);
+                if (r.metadata?.last_updated && r.metadata.last_updated !== createdAt) {
+                  const updatedDate = new Date(r.metadata.last_updated);
                   const updateDaysDiff = Math.floor((now.getTime() - updatedDate.getTime()) / (1000 * 60 * 60 * 24));
                   if (updateDaysDiff === 0) {
                     timeInfo += " (Updated today)";
@@ -151,7 +153,7 @@ export class Minne extends McpAgent<Env, {}, Props> {
                 }
               }
               
-              return `${index + 1}. ${memory} ${id} ${score}${timeInfo}`;
+              return `${index + 1}. ${memory} ${categories} ${id} ${score}${timeInfo}`;
             })
             .join("\n\n");
 
@@ -159,6 +161,136 @@ export class Minne extends McpAgent<Env, {}, Props> {
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : "Unknown error";
           return { content: [{ type: "text", text: `Error searching memories: ${errorMessage}` }] };
+        }
+      }
+    );
+
+    this.server.tool(
+      "searchByCategory",
+      "Search memories within specific categories that mem0 has automatically assigned. Use this to find memories of a particular type (e.g., 'preferences', 'projects', 'facts', etc.)",
+      { 
+        categories: z.array(z.string()).describe("Categories to search within (e.g., ['preferences', 'projects'])"),
+        query: z.string().optional().describe("Optional search query within those categories"),
+        limit: z.number().optional().describe("Maximum number of results (default: 5)")
+      },
+      async ({ categories, query, limit = 5 }) => {
+        if (!login) {
+          return { content: [{ type: "text", text: "Error: User not authenticated." }] };
+        }
+
+        try {
+          const searchQuery = query || categories.join(" ");
+          const results = await this.memoryClient.search(searchQuery, {
+            user_id: login,
+            limit: limit * 3, // Get more results to filter locally
+            // @ts-ignore
+            filter_memories: true
+          });
+
+          const relevantResults = results.filter(r =>
+            r.metadata?.app_context === "minne_worker" && 
+            typeof r.score === 'number' && 
+            r.score >= 0.3 &&
+            Array.isArray(r.categories) &&
+            r.categories.some(cat => categories.some(searchCat => 
+              cat.toLowerCase().includes(searchCat.toLowerCase()) ||
+              searchCat.toLowerCase().includes(cat.toLowerCase())
+            ))
+          );
+
+          if (relevantResults.length === 0) {
+            return { content: [{ type: "text", text: `No memories found in categories: ${categories.join(', ')}. Try different category names or check available categories with getMemoryCategories.` }] };
+          }
+
+          const topResults = relevantResults
+            .sort((a, b) => (b.score || 0) - (a.score || 0))
+            .slice(0, limit);
+
+          const formatted = topResults
+            .map((r, index) => {
+              const score = typeof r.score === 'number' ? `(${Math.round(r.score * 100)}% match)` : "";
+              const memory = typeof r.memory === 'string' ? r.memory : "Memory content not available";
+              const id = typeof r.id === 'string' ? `(ID: ${r.id})` : "";
+              const memoryCategories = Array.isArray(r.categories) && r.categories.length > 0 
+                ? `[Categories: ${r.categories.join(', ')}]` 
+                : "";
+              
+              return `${index + 1}. ${memory} ${memoryCategories} ${id} ${score}`;
+            })
+            .join("\n\n");
+
+          return { content: [{ type: "text", text: `Found ${topResults.length} memories in categories [${categories.join(', ')}]:\n\n${formatted}` }] };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          return { content: [{ type: "text", text: `Error searching by category: ${errorMessage}` }] };
+        }
+      }
+    );
+
+    this.server.tool(
+      "getMemoryCategories",
+      "Discover all categories that mem0 has automatically assigned to your memories. Use this to understand what types of memories you have stored.",
+      { 
+        includeCount: z.boolean().optional().describe("Include count of memories per category (default: true)")
+      },
+      async ({ includeCount = true }) => {
+        if (!login) {
+          return { content: [{ type: "text", text: "Error: User not authenticated." }] };
+        }
+
+        try {
+          // Get all memories to analyze categories
+          const results = await this.memoryClient.search("*", {
+            user_id: login,
+            limit: 100, // Get more results to analyze categories
+            // @ts-ignore
+            filter_memories: true
+          });
+
+          const relevantResults = results.filter(r =>
+            r.metadata?.app_context === "minne_worker" &&
+            Array.isArray(r.categories) &&
+            r.categories.length > 0
+          );
+
+          if (relevantResults.length === 0) {
+            return { content: [{ type: "text", text: "No categorized memories found. Add some memories first, and mem0 will automatically categorize them." }] };
+          }
+
+          // Aggregate categories
+          const categoryMap = new Map<string, number>();
+          
+          relevantResults.forEach(result => {
+            if (Array.isArray(result.categories)) {
+              result.categories.forEach(category => {
+                const normalizedCategory = category.toLowerCase().trim();
+                categoryMap.set(normalizedCategory, (categoryMap.get(normalizedCategory) || 0) + 1);
+              });
+            }
+          });
+
+          // Sort categories by frequency
+          const sortedCategories = Array.from(categoryMap.entries())
+            .sort((a, b) => b[1] - a[1]);
+
+          let formatted: string;
+          if (includeCount) {
+            formatted = sortedCategories
+              .map(([category, count]) => `• ${category} (${count} ${count === 1 ? 'memory' : 'memories'})`)
+              .join('\n');
+          } else {
+            formatted = sortedCategories
+              .map(([category]) => `• ${category}`)
+              .join('\n');
+          }
+
+          const totalCategories = sortedCategories.length;
+          const totalMemories = relevantResults.length;
+
+          return { content: [{ type: "text", text: `Found ${totalCategories} categories across ${totalMemories} memories:\n\n${formatted}\n\nUse searchByCategory to find memories within specific categories.` }] };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          return { content: [{ type: "text", text: `Error getting memory categories: ${errorMessage}` }] };
         }
       }
     );
@@ -202,6 +334,9 @@ export class Minne extends McpAgent<Env, {}, Props> {
             .map((r, index) => {
               const memory = typeof r.memory === 'string' ? r.memory : "Memory content not available";
               const score = typeof r.score === 'number' ? ` (${Math.round(r.score * 100)}% relevant)` : "";
+              const categories = Array.isArray(r.categories) && r.categories.length > 0 
+                ? `[Categories: ${r.categories.join(', ')}]` 
+                : "";
               
               // Add timestamp info for context
               const createdAt = r.metadata?.created_at;
@@ -225,7 +360,7 @@ export class Minne extends McpAgent<Env, {}, Props> {
                 }
               }
               
-              return `${index + 1}. ${memory}${score}${timeInfo}`;
+              return `${index + 1}. ${memory} ${categories} ${score}${timeInfo}`;
             })
             .join("\n\n");
 
